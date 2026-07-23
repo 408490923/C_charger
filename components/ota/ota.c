@@ -226,6 +226,89 @@ ota_end:
     vTaskDelete(NULL);//删除OTA任务
 }
 
+static char ota_url[OTA_URL_SIZE] = {0};
+
+void simple_http_ota(void *pvParameter)
+{
+    esp_err_t err;
+    esp_ota_handle_t update_handle = 0;
+    const esp_partition_t *update_partition = NULL;
+
+    ESP_LOGI(TAG, "HTTP OTA starting, URL: %s", ota_url);
+
+    update_partition = esp_ota_get_next_update_partition(NULL);
+    if (update_partition == NULL) {
+        ESP_LOGE(TAG, "No OTA partition found");
+        vTaskDelete(NULL);
+    }
+
+    esp_http_client_config_t config = {
+        .url = ota_url,
+        .timeout_ms = CONFIG_EXAMPLE_OTA_RECV_TIMEOUT,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+
+    err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open HTTP: %s", esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        vTaskDelete(NULL);
+    }
+
+    int content_length = esp_http_client_fetch_headers(client);
+    ESP_LOGI(TAG, "Content length: %d", content_length);
+
+    err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin failed");
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        vTaskDelete(NULL);
+    }
+
+    char buf[1024];
+    int total_len = 0;
+    while (1) {
+        int len = esp_http_client_read(client, buf, sizeof(buf));
+        if (len < 0) {
+            ESP_LOGE(TAG, "Read error");
+            esp_ota_abort(update_handle);
+            break;
+        }
+        if (len == 0) break;
+
+        total_len += len;
+        err = esp_ota_write(update_handle, buf, len);
+        if (err != ESP_OK) {
+            esp_ota_abort(update_handle);
+            break;
+        }
+        ESP_LOGI(TAG, "Written: %d / %d", total_len, content_length);
+    }
+
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+
+    if (esp_ota_end(update_handle) == ESP_OK) {
+        err = esp_ota_set_boot_partition(update_partition);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "OTA SUCCESS, rebooting...");
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            esp_restart();
+        }
+    }
+
+    ESP_LOGE(TAG, "OTA failed");
+    vTaskDelete(NULL);
+}
+
+void trigger_ota_url(char *url)
+{
+    strncpy(ota_url, url, sizeof(ota_url) - 1);
+    ota_url[sizeof(ota_url) - 1] = '\0';
+    xTaskCreate(&simple_http_ota, "simple_http_ota", 1024 * 8, NULL, 5, NULL);
+}
+
 void OTA_Init(void){
     ESP_ERROR_CHECK(esp_netif_init()); //初始化底层的TCP/IP协议栈
     ESP_ERROR_CHECK(esp_event_loop_create_default()); //创建默认的事件循环

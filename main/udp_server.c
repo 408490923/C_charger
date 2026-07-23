@@ -26,6 +26,7 @@
 #include <adc_read.h>
 #include "http_client.h"
 #include "menu.h"
+#include "ota.h"
 
 #define PORT 8000
 #define CONFIG_EXAMPLE_IPV4
@@ -188,6 +189,13 @@ void udp_server_task(void *pvParameters)
                     ESP_LOGI("CITY", "CITY = %s", city);
                     
                     //nvsWriteCity(city);
+                }
+
+                char otaUrl[256];
+                if(cutString("ota_url", otaUrl, rx_buffer) == 0)
+                {
+                    ESP_LOGI(TAG, "OTA URL received: %s", otaUrl);
+                    trigger_ota_url(otaUrl);
                 }
                 
 

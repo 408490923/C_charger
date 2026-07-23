@@ -9,6 +9,8 @@
 #define _OTA_H_
 
 void advanced_ota_example_task(void *pvParameter);
+void simple_http_ota(void *pvParameter);
+void trigger_ota_url(char *url);
 void OTA_Init(void);
 void setCheckVersion();
 uint16_t getCheckVersion();

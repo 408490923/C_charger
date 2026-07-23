@@ -301,7 +301,11 @@ void ALL_Init(void){
   }
   oledInitMessageTask(4 + wifiMode,"");
   ESP_ERROR_CHECK(nvs_open("WifiConfigFlag",NVS_READWRITE,&wificonfig_handle));
-  nvs_get_u8(wificonfig_handle,"WifiConfigFlag",&s_WifiConfigVal);
+  esp_err_t nvs_err = nvs_get_u8(wificonfig_handle,"WifiConfigFlag",&s_WifiConfigVal);
+  // 全新设备 NVS 无记录时，使用 sdkconfig 默认凭证连接
+  if(nvs_err == ESP_ERR_NVS_NOT_FOUND){
+    s_WifiConfigVal = wifi_configed;
+  }
   
   if(s_WifiConfigVal == wifi_configed || wifiMode == 1){
     if(wifi_init_sta(wifiMode))

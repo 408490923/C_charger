@@ -159,6 +159,14 @@ uint8_t wifi_init_sta(uint8_t mode)
         wifi_config_t wifi_config;
         esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_config);
 
+        // NVS 无存留凭证时，使用 sdkconfig 默认值
+        if (strlen((char*)wifi_config.sta.ssid) == 0) {
+            memcpy(wifi_config.sta.ssid, EXAMPLE_ESP_WIFI_SSID, strlen(EXAMPLE_ESP_WIFI_SSID));
+            memcpy(wifi_config.sta.password, EXAMPLE_ESP_WIFI_PASS, strlen(EXAMPLE_ESP_WIFI_PASS));
+            esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            ESP_LOGI(TAG, "Using default SSID: %s", wifi_config.sta.ssid);
+        }
+
         /* 将事件处理函数注册到默认的事件组循环。这里主要是两个事件，一个是连接WIFI,一个是获取IP */ //原:esp_event_handler_instance_register
         ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
         ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL));
