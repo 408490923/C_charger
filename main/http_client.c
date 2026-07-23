@@ -21,13 +21,9 @@
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
 #include "menu.h"
-#include "mqtt.h"
-#include "menu.h"
 
 #include "esp_http_client.h"
 extern char city[20];
-char appid[20];
-char appsecret[20];
 
 #define MAX_HTTP_RECV_BUFFER 512
 #define MAX_HTTP_OUTPUT_BUFFER 2048
@@ -203,20 +199,22 @@ static void http_rest_with_url(void)
      */
         char output_buffer[MAX_HTTP_OUTPUT_BUFFER] = {0};   // Buffer to store response of http request
     int content_length = 0;
-    char URL[256];  // 增加 URL 数组的大小
+    char URL[256];
     if (city[0] == '\0')
     {
-        snprintf(URL, sizeof(URL), "http://v1.yiketianqi.com/free/day?appid=%s&appsecret=%s&unescape=1", appid, appsecret);
+        // 未指定城市，wttr.in 自动按 IP 定位
+        snprintf(URL, sizeof(URL), "https://wttr.in?format=j2&m");
     }
     else
     {
-        snprintf(URL, sizeof(URL), "http://v1.yiketianqi.com/free/day?appid=%s&appsecret=%s&unescape=1&city=%s", appid, appsecret, city);
+        // 指定城市，wttr.in 直接按城市名查询（支持中文城市）
+        snprintf(URL, sizeof(URL), "https://wttr.in/%s?format=j2&m", city);
     }
     printf("%s", URL);
     esp_http_client_config_t config = {
-	//     .url = "http://v1.yiketianqi.com/free/day?appid=97241921&appsecret=WIvntuL2&unescape=1",
         .url = URL,
-	};
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
    // GET Request
@@ -236,21 +234,32 @@ static void http_rest_with_url(void)
                 esp_http_client_get_content_length(client));
                 ESP_LOGI(TAG, "data:%s", output_buffer);
                 
-                int len = strlen(mWeather.city);
-                for(int ilen = 0; ilen < len;ilen++)
-                {
-                    mWeather.city[ilen] = '\0';
-                }
+                // 清空旧数据
+                memset(&mWeather, 0, sizeof(mWeather));
 
-                cutString("\"city\"", mWeather.city, output_buffer);
-                cutString("\"date\"", mWeather.date, output_buffer);
-                cutString("\"week\"", mWeather.week, output_buffer);
-                cutString("\"update_time\"", mWeather.updateTime, output_buffer);
-                cutString("\"wea\"", mWeather.wea, output_buffer);
-                cutString("\"tem\"", mWeather.tem, output_buffer);
-                cutString("\"tem_day\"", mWeather.temDay, output_buffer);
-                cutString("\"tem_night\"", mWeather.temNight, output_buffer);
-                cutString("\"humidity\"", mWeather.humidity, output_buffer);
+                // wttr.in j2 JSON 格式字段解析
+                cutString("\"temp_C\"", mWeather.tem, output_buffer);           // 当前温度
+                cutString("\"humidity\"", mWeather.humidity, output_buffer);    // 湿度
+                cutString("\"value\"", mWeather.wea, output_buffer);            // 天气描述（weatherDesc[0].value）
+                cutString("\"observation_time\"", mWeather.updateTime, output_buffer);  // 观测时间
+                cutString("\"date\"", mWeather.date, output_buffer);            // 日期
+                cutString("\"maxtempC\"", mWeather.temDay, output_buffer);      // 白天最高温
+                cutString("\"mintempC\"", mWeather.temNight, output_buffer);    // 夜晚最低温
+
+                // 城市名使用请求参数或从 API 返回中提取
+                if (city[0] == '\0')
+                {
+                    // 未指定城市时，从 wttr.in 返回的 nearest_area 中提取市名
+                    int areaPos = findMenu("\"areaName\"", output_buffer);
+                    if (areaPos != -1)
+                    {
+                        cutString("\"value\"", mWeather.city, output_buffer + areaPos);
+                    }
+                }
+                else
+                {
+                    strncpy(mWeather.city, city, sizeof(mWeather.city) - 1);
+                }
                    
 	//			cJSON_parse_task(output_buffer);
             } else {

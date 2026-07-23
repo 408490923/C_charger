@@ -37,14 +37,11 @@
 
 #include "task.h"
 #include "http_client.h"
-#include "mqtt.h"
 
 static const char *TAG = "main";
 #define RMT_TX_CHANNEL RMT_CHANNEL_0
 extern int16_t rgbProportion[3];
 extern char city[50];
-extern char appid[20];
-extern char appsecret[20];
 int16_t light = 10;
 int16_t boardMode = 0;
 
@@ -204,38 +201,6 @@ void nvsRead(void)
                 ESP_LOGI(TAG, "ERROR CITYGET = %s", esp_err_to_name(err));
         }
 
-        lencity = 20;
-        err = nvs_get_str(my_handle, "appid", appid, &lencity);
-        switch (err) 
-        {
-            case ESP_OK:
-                ESP_LOGI(TAG, "appidGET = %s", appid);
-                break;
-            case ESP_ERR_NVS_NOT_FOUND:
-                appid[0] = '\0';
-                ESP_LOGI(TAG, "ERROR appidGET = %s", appid);
-                break;
-            default:
-                ESP_LOGI(TAG, "ERROR appidGET = %s", esp_err_to_name(err));
-        }
-
-        lencity = 20;
-        err = nvs_get_str(my_handle, "appsecret", appsecret, &lencity);
-        switch (err) 
-        {
-            case ESP_OK:
-                ESP_LOGI(TAG, "appsecret = %s", appid);
-                break;
-            case ESP_ERR_NVS_NOT_FOUND:
-                appsecret[0] = '\0';
-                ESP_LOGI(TAG, "ERROR appsecret = %s", appsecret);
-                break;
-            default:
-                ESP_LOGI(TAG, "ERROR appsecret = %s", esp_err_to_name(err));
-        }
-
-       
-
         nvs_close(my_handle);
     }
 }
@@ -376,7 +341,6 @@ void ALL_Init(void){
   
   
 
-  //user_mqtt_app_start();
   if(boardMode == 1)
   {
      xTaskCreate(dht11Task, "dht11Task", 4096, NULL, 2, NULL);

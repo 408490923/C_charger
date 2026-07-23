@@ -27,8 +27,6 @@ void oledStopDisplay();
 void oledInitMessageTask(uint8_t num,char *state);
 void reSetOledProtect();
 void nvsWriteCity();
-void nvsWriteAppid();
-void nvsWriteAppsecret();
 void nvsWrite();
 void oledViAllShow();
 int8_t oledOffTimeBegin;

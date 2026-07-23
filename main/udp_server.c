@@ -26,7 +26,6 @@
 #include <adc_read.h>
 #include "http_client.h"
 #include "menu.h"
-#include "mqtt.h"
 
 #define PORT 8000
 #define CONFIG_EXAMPLE_IPV4
@@ -35,8 +34,6 @@ int flag = 0;
 int sock;
  struct sockaddr_storage source_addr;
  char city[50];
- extern char appid[20];
- extern char appsecret[20];
  extern int16_t rgbProportion[3];
  extern int16_t light;
  extern myWeather mWeather;
@@ -193,23 +190,6 @@ void udp_server_task(void *pvParameters)
                     //nvsWriteCity(city);
                 }
                 
-                if(cutString("appid", appid, rx_buffer) == 0)
-                {
-                    
-                    ESP_LOGI("appid", "appid = %s", appid);
-                    
-                    nvsWriteAppid(appid);
-                }
-
-                if(cutString("appsecret", appsecret, rx_buffer) == 0)
-                {
-                    printf("appsecret de length = %d", strlen(appsecret));
-                    ESP_LOGI("appsecret", "appsecret = %s", appsecret);
-                    appsecret[strlen(appsecret)] = '\0';
-                    
-                    nvsWriteAppsecret(appsecret);
-                }
-
 
                 char rgb[5];
                 if(cutString("rgb[0]", rgb, rx_buffer) == 0)
