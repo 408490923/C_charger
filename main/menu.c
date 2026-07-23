@@ -852,7 +852,7 @@ static void oledWeatherSurface(void)
   strcat(str1, " ");
   strcat(str1,mWeather.tem);
   strcat(str1, "℃");
-  strcat(str1, " upd:");
+  strcat(str1, " up:");
   strcat(str1,mWeather.updateTime);
   u8g2_DrawUTF8(&u8g2, 0, 46, str1);
 
@@ -931,63 +931,33 @@ void oledStopDisplay()
 
 }
 
-void deleteChar(char * buf,int begin, int num)
-{
-  int i = begin;
-  int num1 = 0;
-  while(buf[i + num] != '\0')
-  {
-    buf[i] = buf[i + num];
-    i ++;
-  }
-  buf[i] = '\0';
-  i = 0;
-  while(buf[i] != '\0')
-  {
-    if(buf[i] == ':')
-    num1++;
-    if(buf[i] == ':' && num1 ==2)
-    {
-      buf[i + 3] = '\0';
-      break;
-    }
-    i++;
-  }
-  
-  
-}
-
 static void oledClockSurface(void){
   time_t now;
   struct tm timeinfo;
-  int year = 22;
   char buf[64] = {0};
+  const char* weekDays[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
 
   u8g2_ClearBuffer(&u8g2);
-  u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
-  u8g2_DrawUTF8(&u8g2, 40, 15, "时钟");
-//  u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr);
+
   time(&now);
   localtime_r(&now, &timeinfo);
-  sprintf(buf,"%02d:%02d:%02d",timeinfo.tm_hour,timeinfo.tm_min,timeinfo.tm_sec);
-  u8g2_DrawStr(&u8g2, 10, 32, buf);
-  if(timeinfo.tm_year >= 100)
-  {
-    year = timeinfo.tm_year - 100 + 2000;  
-  }
-   sprintf(buf,"%d/%d/%d",year,timeinfo.tm_mon + 1,timeinfo.tm_mday);
-   u8g2_DrawStr(&u8g2, 10, 48, buf);
- 
-  if(Humi > 0)//如果有温湿度传感器的话
-  {
-    sprintf(buf,"温度:%4.1f℃湿度:%d%% ",Temp + 0.1 * Temp_small, Humi);
-  }
-  else
-  {
-    strftime(buf,sizeof(timeinfo),"%c",&timeinfo);
-    deleteChar(buf, 7, 3);
-  }
-  u8g2_DrawUTF8(&u8g2, 0, 60, buf);
+
+  // 第一行：日期（居中）
+  u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
+  sprintf(buf, "%d年%02d月%02d日",
+          timeinfo.tm_year + 1900,
+          timeinfo.tm_mon + 1,
+          timeinfo.tm_mday);
+  u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, buf)) / 2, 14, buf);
+
+  // 第二行：星期（居中）
+  sprintf(buf, "%s", weekDays[timeinfo.tm_wday]);
+  u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, buf)) / 2, 28, buf);
+
+  // 时间：大号粗体居中
+  u8g2_SetFont(&u8g2, u8g2_font_helvB14_tr);
+  sprintf(buf, "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  u8g2_DrawStr(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, buf)) / 2, 56, buf);
   u8g2_SendBuffer(&u8g2);
 }
 void displayRgbSet(char* header, int16_t* RGB)
@@ -1148,7 +1118,7 @@ static void oledSettingSurface(void)
     case 2:
       for (;;)
       {
-        current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "无线配置", 1, "Wifi状态\n配网\n远程控制\n蓝牙控制\n<-返回");
+        current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "无线配置", 1, "Wifi状态\n配网\n远程控制\n<-返回");
         switch (current_selection)
         {
         case 1:
@@ -1161,8 +1131,6 @@ static void oledSettingSurface(void)
           remoteControl();
           break;
         case 4:
-          break;
-        case 5:
           EXIT_MENU_SET
           break;
         }
@@ -1265,7 +1233,7 @@ static void oledSettingSurface(void)
       }
       break;
     case 7:
-      current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "关于", 1, "版权所有\n伦敦烟云smog\nModified by Ktx\nFix by Zyilin98\n固件版本: V1.6.7\n<-返回"); // 使用 硬编码 显示固件版本，我确实想不起来还有什么办法可以显示版本
+      current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "关于", 1, "Fix by XWW\n固件版本: V2.0.0\n<-返回"); // 使用 硬编码 显示固件版本，我确实想不起来还有什么办法可以显示版本
       break;
     case 8:
       esp_restart();
@@ -1287,16 +1255,16 @@ void oledViAllShow()
   u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
   u8g2_SetFontRefHeightAll(&u8g2);
   u8g2_ClearBuffer(&u8g2);
-  sprintf(buf, "C1口 %d.%03dV %d.%03dA", (sw35xx_c1.OutVol * 6) / 1000, (sw35xx_c1.OutVol * 6) % 1000, (c1CurRevise * 25 / 10) / 1000, (c1CurRevise * 25 / 10) % 1000);
+  sprintf(buf, "C1 %d.%02dV   %d.%03dA", (sw35xx_c1.OutVol * 6) / 1000, (sw35xx_c1.OutVol * 6) % 1000, (c1CurRevise * 25 / 10) / 1000, (c1CurRevise * 25 / 10) % 1000);
   u8g2_DrawUTF8(&u8g2, 0, 16, buf);
-  sprintf(buf, "C2口 %d.%03dV %d.%03dA", (sw35xx_c2.OutVol * 6) / 1000, (sw35xx_c2.OutVol * 6) % 1000, (c2CurRevise * 25 / 10) / 1000, (c2CurRevise * 25 / 10) % 1000);
+  sprintf(buf, "C2 %d.%02dV   %d.%03dA", (sw35xx_c2.OutVol * 6) / 1000, (sw35xx_c2.OutVol * 6) % 1000, (c2CurRevise * 25 / 10) / 1000, (c2CurRevise * 25 / 10) % 1000);
   u8g2_DrawUTF8(&u8g2, 0, 32, buf);
-  sprintf(buf, "A1口 %d.%03dV", (ADC[0]) / 1000, (ADC[0]) % 1000);
+  sprintf(buf, "A1 %d.%02dV", (ADC[0]) / 1000, (ADC[0]) % 1000);
   u8g2_DrawUTF8(&u8g2, 0, 48, buf);
-  sprintf(buf, "A2口 %d.%03dV", (ADC[1]) / 1000, (ADC[1]) % 1000);
+  sprintf(buf, "A2 %d.%02dV", (ADC[1]) / 1000, (ADC[1]) % 1000);
   u8g2_DrawUTF8(&u8g2, 0, 64, buf);
   u8g2_DrawUTF8(&u8g2, 90, 48, "VIN");
-  sprintf(buf, "%6.3fV", ((double)sw35xx_c1.InVol) / 100);
+  sprintf(buf, "%6.2fV", ((double)sw35xx_c1.InVol) / 100);
   u8g2_DrawUTF8(&u8g2, 80, 64, buf);
   u8g2_SendBuffer(&u8g2);
 }
@@ -1334,12 +1302,12 @@ void oledChargePower(uint8_t event)
   u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
   u8g2_SetFontRefHeightAll(&u8g2);
   u8g2_ClearBuffer(&u8g2);
-  sprintf(buf, " C1口   %6.3fW", ((double)sw35xx_c1.OutVol * 6) / 1000 * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000);
+  sprintf(buf, " C1   %6.3fW", ((double)sw35xx_c1.OutVol * 6) / 1000 * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000);
   u8g2_DrawUTF8(&u8g2, 0, 16, buf);
   sprintf(buf, " %5.2fWh%7.1fmAh", c1Power, c1Power / 3.7 * 1000);
   u8g2_DrawUTF8(&u8g2, 0, 31, buf);
 
-  sprintf(buf, " C2口   %6.3fW", ((double)sw35xx_c2.OutVol * 6) / 1000 * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000);
+  sprintf(buf, " C2   %6.3fW", ((double)sw35xx_c2.OutVol * 6) / 1000 * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000);
   u8g2_DrawUTF8(&u8g2, 0, 46, buf);
   sprintf(buf, " %5.2fWh%7.1fmAh", c2Power, c2Power / 3.7 * 1000);
   u8g2_DrawUTF8(&u8g2, 0, 62, buf);

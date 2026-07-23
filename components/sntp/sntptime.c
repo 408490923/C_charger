@@ -137,6 +137,7 @@ static void initialize_sntp(void)
     sntp_setservername(0, "ntp.aliyun.com");
     sntp_setservername(1, "ntp.tencent.com");		// 国家授时中心服务器 IP 地址
     sntp_setservername(2, "210.72.145.44");
+    
     sntp_set_time_sync_notification_cb(time_sync_notification_cb);
 
     sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);

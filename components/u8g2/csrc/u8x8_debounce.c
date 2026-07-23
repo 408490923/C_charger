@@ -133,7 +133,7 @@ uint8_t u8x8_GetMenuEvent(u8x8_t *u8x8)
 #else  /* __unix__ */
 
 
-#define U8X8_DEBOUNCE_WAIT 2
+#define U8X8_DEBOUNCE_WAIT 0
 /* do debounce and return a GPIO msg which indicates the event */
 /* returns 0, if there is no event */
 #if defined(__GNUC__) && !defined(__CYGWIN__)
