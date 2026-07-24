@@ -115,12 +115,12 @@ static esp_err_t ws_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* Push live status to the connected browser every 300 ms. */
+/* Push live status to the connected browser every 200 ms. */
 static void ws_push_task(void *arg)
 {
     char buf[256];
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(300));
+        vTaskDelay(pdMS_TO_TICKS(200));
         if (g_fd >= 0 && g_server) {
             int n = charger_build_status(buf, sizeof(buf));
             httpd_ws_frame_t f = {
