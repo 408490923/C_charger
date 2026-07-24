@@ -24,6 +24,7 @@ typedef struct
 myWeather mWeather;
 void oledTask(void *pvParameters);
 void oledStopDisplay();
+void oledOtaDisplay();
 void oledInitMessageTask(uint8_t num,char *state);
 void reSetOledProtect();
 void nvsWriteCity();

@@ -1291,6 +1291,75 @@ void oledViAllShow()
   u8g2_SendBuffer(&u8g2);
 }
 
+/* OTA 升级专属界面：进度条 + 实时速率 + 成功/失败结果 */
+void oledOtaDisplay(void)
+{
+    char buf[40] = {0};
+    u8g2_ClearBuffer(&u8g2);
+    u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
+    u8g2_SetFontRefHeightAll(&u8g2);
+
+    /* 标题 */
+    const char *title = "固件升级中";
+    if (g_ota_ui.state == OTA_UI_SUCCESS)
+        title = "固件升级成功";
+    else if (g_ota_ui.state == OTA_UI_FAILED)
+        title = "固件升级失败";
+    u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, (char *)title)) / 2, 14, (char *)title);
+
+    if (g_ota_ui.state == OTA_UI_DOWNLOADING)
+    {
+        /* 进度条外框 */
+        int bar_x = 8, bar_y = 26, bar_w = 112, bar_h = 12;
+        u8g2_DrawFrame(&u8g2, bar_x, bar_y, bar_w, bar_h);
+
+        int pct = 0;
+        if (g_ota_ui.content_length > 0)
+        {
+            pct = (int)((int64_t)g_ota_ui.total_len * 100 / g_ota_ui.content_length);
+            if (pct > 100) pct = 100;
+        }
+        int fill_w = bar_w * pct / 100;
+        if (fill_w > 0)
+            u8g2_DrawBox(&u8g2, bar_x, bar_y, fill_w, bar_h);
+
+        /* 百分比 */
+        sprintf(buf, "%d%%", pct);
+        u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, buf)) / 2, 50, buf);
+
+        /* 实时下载速率 */
+        sprintf(buf, "%d KB/s", g_ota_ui.speed_kbps);
+        u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, buf)) / 2, 62, buf);
+    }
+    else if (g_ota_ui.state == OTA_UI_SUCCESS)
+    {
+        u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, "即将自动重启...")) / 2, 44, "即将自动重启...");
+    }
+    else if (g_ota_ui.state == OTA_UI_FAILED)
+    {
+        /* 失败原因：按 '|' 拆分为两行显示 */
+        char line1[40] = {0}, line2[40] = {0};
+        char *sep = strchr(g_ota_ui.error_reason, '|');
+        if (sep)
+        {
+            *sep = '\0';
+            strncpy(line1, g_ota_ui.error_reason, sizeof(line1) - 1);
+            strncpy(line2, sep + 1, sizeof(line2) - 1);
+        }
+        else
+        {
+            strncpy(line1, g_ota_ui.error_reason, sizeof(line1) - 1);
+        }
+        u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, line1)) / 2, 40, line1);
+        if (line2[0])
+            u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, line2)) / 2, 54, line2);
+        u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
+        u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, "按任意键返回")) / 2, 62, "按任意键返回");
+    }
+
+    u8g2_SendBuffer(&u8g2);
+}
+
 void reSetOledProtect()
 {
     OledProtectBegin = 0;
@@ -1353,6 +1422,27 @@ void oledTask(void *pvParameters)
   for (;;)
   {
     uint8_t event = u8x8_GetMenuEvent(u8g2_GetU8x8(&u8g2));
+
+    /* OTA 升级专属界面：最高优先级，升级过程中屏蔽其他所有界面与操作 */
+    if (ota_ui_active)
+    {
+        oledOtaDisplay();
+        if (g_ota_ui.state == OTA_UI_FAILED)
+        {
+            /* 仅升级失败后才允许按键返回主界面，升级中不会因误触中断 */
+            if (event == U8X8_MSG_GPIO_MENU_SELECT || event == U8X8_MSG_GPIO_MENU_NEXT ||
+                event == U8X8_MSG_GPIO_MENU_DOWN   || event == U8X8_MSG_GPIO_MENU_PREV ||
+                event == U8X8_MSG_GPIO_MENU_UP)
+            {
+                ota_ui_active = 0;
+                g_ota_ui.state = OTA_UI_IDLE;
+                reSetOledProtect();
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+        continue;
+    }
+
     findChange(c1POld, c2POld, &Mode);
     c1POld = ((double)sw35xx_c1.OutVol * 6) * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000000;
     c2POld = ((double)sw35xx_c2.OutVol * 6) * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000000;

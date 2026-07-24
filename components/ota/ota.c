@@ -20,6 +20,8 @@
 #include "nvs_flash.h"
 #include "protocol_examples_common.h"
 #include <driver/gpio.h>
+#include "esp_timer.h"
+#include "ota.h"
 
 #if CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK
 #include "esp_efuse.h"
@@ -228,17 +230,31 @@ ota_end:
 
 static char ota_url[OTA_URL_SIZE] = {0};
 
+/* OTA 升级界面共享状态（在 ota.c 中定义，menu.c 中引用） */
+ota_ui_status_t g_ota_ui = {0};
+int ota_ui_active = 0;
+
 void simple_http_ota(void *pvParameter)
 {
     esp_err_t err;
     esp_ota_handle_t update_handle = 0;
     const esp_partition_t *update_partition = NULL;
 
+    /* 进入 OTA 专属界面，重置状态 */
+    g_ota_ui.state = OTA_UI_DOWNLOADING;
+    g_ota_ui.total_len = 0;
+    g_ota_ui.content_length = 0;
+    g_ota_ui.speed_kbps = 0;
+    g_ota_ui.error_reason[0] = '\0';
+    ota_ui_active = 1;
+
     ESP_LOGI(TAG, "HTTP OTA starting, URL: %s", ota_url);
 
     update_partition = esp_ota_get_next_update_partition(NULL);
     if (update_partition == NULL) {
         ESP_LOGE(TAG, "No OTA partition found");
+        g_ota_ui.state = OTA_UI_FAILED;
+        snprintf(g_ota_ui.error_reason, sizeof(g_ota_ui.error_reason), "存储错误|未找到 OTA 分区");
         vTaskDelete(NULL);
     }
 
@@ -252,36 +268,71 @@ void simple_http_ota(void *pvParameter)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to open HTTP: %s", esp_err_to_name(err));
         esp_http_client_cleanup(client);
+        g_ota_ui.state = OTA_UI_FAILED;
+        snprintf(g_ota_ui.error_reason, sizeof(g_ota_ui.error_reason), "网络错误|无法连接服务器");
         vTaskDelete(NULL);
     }
 
     int content_length = esp_http_client_fetch_headers(client);
     ESP_LOGI(TAG, "Content length: %d", content_length);
+    if (content_length <= 0) {
+        ESP_LOGE(TAG, "Failed to get content length");
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        g_ota_ui.state = OTA_UI_FAILED;
+        snprintf(g_ota_ui.error_reason, sizeof(g_ota_ui.error_reason), "网络错误|获取固件信息失败");
+        vTaskDelete(NULL);
+    }
+    g_ota_ui.content_length = content_length;
 
     err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &update_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_begin failed");
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
+        g_ota_ui.state = OTA_UI_FAILED;
+        snprintf(g_ota_ui.error_reason, sizeof(g_ota_ui.error_reason), "存储不足|OTA 分区写入失败");
         vTaskDelete(NULL);
     }
 
     char buf[1024];
     int total_len = 0;
+    int64_t last_time = esp_timer_get_time();
+    int last_total = 0;
     while (1) {
         int len = esp_http_client_read(client, buf, sizeof(buf));
         if (len < 0) {
             ESP_LOGE(TAG, "Read error");
             esp_ota_abort(update_handle);
-            break;
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            g_ota_ui.state = OTA_UI_FAILED;
+            snprintf(g_ota_ui.error_reason, sizeof(g_ota_ui.error_reason), "网络中断|下载过程连接断开");
+            vTaskDelete(NULL);
         }
         if (len == 0) break;
 
         total_len += len;
+        g_ota_ui.total_len = total_len;
+
+        /* 每约 500ms 刷新一次下载速率 (KB/s) */
+        int64_t now = esp_timer_get_time();
+        int64_t dt = now - last_time;
+        if (dt >= 500000) {
+            int bytes = total_len - last_total;
+            g_ota_ui.speed_kbps = (int)((int64_t)bytes * 1000000 / dt / 1024);
+            last_time = now;
+            last_total = total_len;
+        }
+
         err = esp_ota_write(update_handle, buf, len);
         if (err != ESP_OK) {
             esp_ota_abort(update_handle);
-            break;
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            g_ota_ui.state = OTA_UI_FAILED;
+            snprintf(g_ota_ui.error_reason, sizeof(g_ota_ui.error_reason), "存储错误|写入固件失败");
+            vTaskDelete(NULL);
         }
         ESP_LOGI(TAG, "Written: %d / %d", total_len, content_length);
     }
@@ -293,9 +344,17 @@ void simple_http_ota(void *pvParameter)
         err = esp_ota_set_boot_partition(update_partition);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "OTA SUCCESS, rebooting...");
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            g_ota_ui.state = OTA_UI_SUCCESS;
+            g_ota_ui.speed_kbps = 0;
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
             esp_restart();
+        } else {
+            g_ota_ui.state = OTA_UI_FAILED;
+            snprintf(g_ota_ui.error_reason, sizeof(g_ota_ui.error_reason), "分区错误|设置启动分区失败");
         }
+    } else {
+        g_ota_ui.state = OTA_UI_FAILED;
+        snprintf(g_ota_ui.error_reason, sizeof(g_ota_ui.error_reason), "校验失败|固件完整性未通过");
     }
 
     ESP_LOGE(TAG, "OTA failed");
@@ -306,6 +365,9 @@ void trigger_ota_url(char *url)
 {
     strncpy(ota_url, url, sizeof(ota_url) - 1);
     ota_url[sizeof(ota_url) - 1] = '\0';
+    /* 收到 OTA 指令即切换到升级界面 */
+    ota_ui_active = 1;
+    g_ota_ui.state = OTA_UI_DOWNLOADING;
     xTaskCreate(&simple_http_ota, "simple_http_ota", 1024 * 8, NULL, 5, NULL);
 }
 
