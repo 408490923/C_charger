@@ -28,6 +28,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
+#include "esp_ota_ops.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 
@@ -1088,7 +1089,7 @@ static void oledSettingSurface(void)
     case 1:
       for (;;)
       {
-        current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "参数设置", 1, "C口功率限制\n快充协议限制\nRGB指示灯\n熄屏是否显示输入电压\nA口LED是否常亮\n<-返回");
+        current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "参数设置", 1, "C口功率限制\n快充协议限制\n熄屏显示输入电压\n<-返回");
         switch (current_selection)
         {
         case 1:
@@ -1097,11 +1098,11 @@ static void oledSettingSurface(void)
         case 2:
           oledAggreLimitTask();
           break;
-        case 3:
+        /*case 3:
           rgbLight();
-          break;
-        case 4:
-          current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "是否显示输入电压", 1, "是\n否\n<-返回");
+          break;*/
+        case 3:
+          current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "显示输入电压", 1, "是\n否\n<-返回");
           switch (current_selection)
           {
             case 1:
@@ -1113,8 +1114,7 @@ static void oledSettingSurface(void)
               nvsWritedisplayInput();
               break;
           }
-          break;
-        case 5:
+         /*case 4:
           current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "A口LED是否常亮", 1, "是\n否\n<-返回");
           switch (current_selection)
           {
@@ -1127,12 +1127,7 @@ static void oledSettingSurface(void)
               nvsWriteAPortLed(aPortLed);
               break;
           }
-          break;
-
-
-        case 6:
-          EXIT_MENU_SET
-          break;
+          break;*/
         }
         EXIT_MENU_CHECK
       }
@@ -1255,8 +1250,19 @@ static void oledSettingSurface(void)
       }
       break;
     case 5:
-      current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "关于", 1, "Fix by XWW\n固件版本: V2.0.0\n<-返回"); // 使用 硬编码 显示固件版本，我确实想不起来还有什么办法可以显示版本
-      break;
+    {
+      /* 版本号从固件镜像头读取，编译时由 CMakeLists.txt 的 PROJECT_VER 决定，
+         改版本只需改 CMakeLists.txt，无需改此处硬编码 */
+      char about_buf[64];
+      const char *ver = "unknown";
+      const esp_app_desc_t *app_desc = esp_ota_get_app_description();
+      if (app_desc != NULL && app_desc->version[0] != '\0') {
+        ver = app_desc->version;
+      }
+      snprintf(about_buf, sizeof(about_buf), "Fix by XWW\n固件版本: V%s\n<-返回", ver);
+      current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "关于", 1, about_buf);
+    }
+    break;
     case 6:
       esp_restart();
       break;

@@ -97,17 +97,43 @@ void sw35xxTask(void *pvParameters)
   }
 }
 
+/* 功率(W) -> 归一化 RGB 颜色权重：
+   0.1W~20W  绿(0,1,0) 平滑过渡到 蓝(0,0,1)
+   20W~65W   蓝(0,0,1) 平滑过渡到 红(1,0,0)
+   两段在 20W 处均为纯蓝，保证渐变连续 */
+static void powerToColor(double power, double *r, double *g, double *b)
+{
+    if (power < 0.1) power = 0.1;
+    if (power > 65.0) power = 65.0;
+
+    if (power <= 20.0)
+    {
+        double t = (power - 0.1) / (20.0 - 0.1); /* 0=绿 1=蓝 */
+        *r = 0.0;
+        *g = 1.0 - t;
+        *b = t;
+    }
+    else
+    {
+        double t = (power - 20.0) / (65.0 - 20.0); /* 0=蓝 1=红 */
+        *r = t;
+        *g = 0.0;
+        *b = 1.0 - t;
+    }
+} 
+
+
 void ws28xxTask(void *pvParameters)
 {
   uint32_t breathe = 0;
   uint8_t breathe_flag = 0;
   for (;;)
   {
-    /* 呼吸亮度：0~150 之间往复，实现呼吸效果 */
+    /* 呼吸亮度：0~200 之间往复，实现呼吸效果（上升/下降各 200 步） */
     if (!breathe_flag)
     {
-      breathe = (breathe > 150 ? 150 : breathe + 1);
-      if (breathe == 150)
+      breathe = (breathe > 200 ? 200 : breathe + 1);
+      if (breathe == 200)
       {
         breathe_flag = 1;
       }
@@ -125,39 +151,30 @@ void ws28xxTask(void *pvParameters)
     double c1P = ((double)sw35xx_c1.OutVol * 6) * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000000;
     double c2P = ((double)sw35xx_c2.OutVol * 6) * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000000;
 
-    /* 充电功率 0.1W~30W 映射为颜色权重 t：0=绿(慢充) 1=红(快充)，中间平滑渐变 */
-    double t1 = (c1P - 0.1) / (30.0 - 0.1);
-    if (t1 < 0) { t1 = 0; }
-    if (t1 > 1) { t1 = 1; }
-    double t2 = (c2P - 0.1) / (30.0 - 0.1);
-    if (t2 < 0) { t2 = 0; }
-    if (t2 > 1) { t2 = 1; }
-
     for (int j = 0; j < 4; j += 1)
     {
       uint32_t r, g, b;
       if (j == 0 || j == 1)
       {
-        /* C1/C2 充电状态：颜色仅由功率决定，不受用户 RGB 配色(rgbProportion)影响，
-           否则红色分量会被 rgbProportion[0] 清零而永远显示绿色 */
-        double r_norm = (j == 0) ? t1 : t2;
-        double g_norm = 1.0 - r_norm;
-        r = (uint32_t)(r_norm * 255 * breathe / 150 * light / 100 * rgbOn[j]);
-        g = (uint32_t)(g_norm * 255 * breathe / 150 * light / 100 * rgbOn[j]);
-        b = 0;
+        /* C1/C2 充电状态：颜色仅由功率决定，不受用户 RGB 配色(rgbProportion)影响 */
+        double r_norm, g_norm, b_norm;
+        powerToColor((j == 0) ? c1P : c2P, &r_norm, &g_norm, &b_norm);
+        r = (uint32_t)(r_norm * 255 * breathe / 200 * light / 100 * rgbOn[j]);
+        g = (uint32_t)(g_norm * 255 * breathe / 200 * light / 100 * rgbOn[j]);
+        b = (uint32_t)(b_norm * 255 * breathe / 200 * light / 100 * rgbOn[j]);
       }
       else
       {
         /* j==2/3 端口指示灯：沿用原白光呼吸逻辑（受用户 RGB 配色控制） */
-        r = (uint32_t)(breathe * rgbProportion[0] * light / 100 / 150 * rgbOn[j]);
-        g = (uint32_t)(breathe * rgbProportion[1] * light / 100 / 150 * rgbOn[j]);
-        b = (uint32_t)(breathe * rgbProportion[2] * light / 100 / 150 * rgbOn[j]);
+        r = (uint32_t)(breathe * rgbProportion[0] * light / 100 / 200 * rgbOn[j]);
+        g = (uint32_t)(breathe * rgbProportion[1] * light / 100 / 200 * rgbOn[j]);
+        b = (uint32_t)(breathe * rgbProportion[2] * light / 100 / 200 * rgbOn[j]);
       }
       ESP_ERROR_CHECK(strip->set_pixel(strip, j, r, g, b));
     }
     ESP_ERROR_CHECK(strip->refresh(strip, 100));
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(2.5));
   }
 }
 
