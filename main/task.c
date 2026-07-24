@@ -125,28 +125,10 @@ static void powerToColor(double power, double *r, double *g, double *b)
 
 void ws28xxTask(void *pvParameters)
 {
-  uint32_t breathe = 0;
-  uint8_t breathe_flag = 0;
+  /* 常亮模式：取消呼吸，亮度固定为满（breathe 恒为 200，使 breathe/200 = 1） */
+  uint32_t breathe = 200;
   for (;;)
   {
-    /* 呼吸亮度：0~200 之间往复，实现呼吸效果（上升/下降各 200 步） */
-    if (!breathe_flag)
-    {
-      breathe = (breathe > 200 ? 200 : breathe + 1);
-      if (breathe == 200)
-      {
-        breathe_flag = 1;
-      }
-    }
-    else
-    {
-      breathe = (breathe <= 0 ? 0 : breathe - 1);
-      if (breathe == 0)
-      {
-        breathe_flag = 0;
-      }
-    }
-
     /* C1 / C2 实时输出功率 (W) */
     double c1P = ((double)sw35xx_c1.OutVol * 6) * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000000;
     double c2P = ((double)sw35xx_c2.OutVol * 6) * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000000;
