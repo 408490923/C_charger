@@ -1385,6 +1385,14 @@ void findChange(double c1POld, double c2POld, uint8_t *Mode)
     }
     
 }
+
+/* 是否正在充电：C1 或 C2 接口输出功率超过阈值即视为有设备正在充电 */
+static int oledIsCharging(void)
+{
+    double c1P = ((double)sw35xx_c1.OutVol * 6) * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000000;
+    double c2P = ((double)sw35xx_c2.OutVol * 6) * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000000;
+    return (c1P > 0.2 || c2P > 0.2) ? 1 : 0;
+}
 void oledChargePower(uint8_t event)
 {
  
@@ -1447,6 +1455,9 @@ void oledTask(void *pvParameters)
     c1POld = ((double)sw35xx_c1.OutVol * 6) * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000000;
     c2POld = ((double)sw35xx_c2.OutVol * 6) * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000000;
 
+    /* 当前是否有设备正在充电 */
+    int charging = oledIsCharging();
+
     if(OledProtectBegin == 0)
     {
       switch (Mode)
@@ -1463,7 +1474,8 @@ void oledTask(void *pvParameters)
          oledWeatherSurface();
          break;
       case 2:
-        oledClockSurface();
+         oledStopDisplay();
+        //oledClockSurface();
         break;
       case 3:
         oledSettingSurface();
@@ -1473,14 +1485,23 @@ void oledTask(void *pvParameters)
     }
     else
     {
-        oledStopDisplay();
+        /* 充电中检测到已进入屏保：立即中断并回到正常界面 */
+        if (charging)
+        {
+            OledProtectBegin = 0;
+            time(&beginTime);
+        }
+        else
+        {
+            oledStopDisplay();
+        }
     }
    
     if(OledProtectBegin == 0)
     {
     
       time(&nowTime);
-      if(nowTime - beginTime >= SCREENSAVER_TIMEOUT)
+      if(!charging && nowTime - beginTime >= SCREENSAVER_TIMEOUT)
       {
         OledProtectBegin = 1;
         
