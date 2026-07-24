@@ -1128,6 +1128,9 @@ static void oledSettingSurface(void)
               break;
           }
           break;*/
+          case 4:
+          EXIT_MENU_SET
+          break;
         }
         EXIT_MENU_CHECK
       }
