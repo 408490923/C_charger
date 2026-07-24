@@ -356,11 +356,6 @@ static void oledSmartConfigTask(void){
     
 }
 
-static void  oledPowerLimitTask(void){
-  uint8_t current_selection = 0;
-  current_selection = u8g2_UserInterfaceMessage(&u8g2, "C口功率限制设定", "C1口功率:", "C1口功率:", "更新\n取消");
-}
-
 static void oledVIShowTask(void)
 {
   reSetOledProtect();
@@ -1043,17 +1038,6 @@ void rgbLight()
 }
 
 
-void remoteControl()
-{
-    u8g2_ClearBuffer(&u8g2);
-    u8g2_DrawUTF8(&u8g2, 20, 16, "远程控制");
-    u8g2_DrawUTF8(&u8g2, 0, 30, "请配合电脑端软件使用");
-    u8g2_DrawUTF8(&u8g2, 0, 46, "配套软件Charger");
-    u8g2_DrawUTF8(&u8g2, 0, 62, "按确认键退出");
-    u8g2_SendBuffer(&u8g2);
-    while(u8x8_GetMenuEvent(u8g2_GetU8x8(&u8g2)) !=  U8X8_MSG_GPIO_MENU_SELECT);
-}
-
 void oledAggreLimitTask()
 {
   uint8_t current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "开关PPS协议", aggreLimit + 1, "开\n关\n<-返回");
@@ -1089,19 +1073,13 @@ static void oledSettingSurface(void)
     case 1:
       for (;;)
       {
-        current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "参数设置", 1, "C口功率限制\n快充协议限制\n熄屏显示输入电压\n<-返回");
+        current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "参数设置", 1, "快充协议限制\n熄屏显示输入电压\n<-返回");
         switch (current_selection)
         {
         case 1:
-          oledPowerLimitTask();
-          break;
-        case 2:
           oledAggreLimitTask();
           break;
-        /*case 3:
-          rgbLight();
-          break;*/
-        case 3:
+        case 2:
           current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "显示输入电压", 1, "是\n否\n<-返回");
           switch (current_selection)
           {
@@ -1114,21 +1092,8 @@ static void oledSettingSurface(void)
               nvsWritedisplayInput();
               break;
           }
-         /*case 4:
-          current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "A口LED是否常亮", 1, "是\n否\n<-返回");
-          switch (current_selection)
-          {
-            case 1:
-              aPortLed = 1;
-              nvsWriteAPortLed(aPortLed);
-              break;
-            case 2:
-              aPortLed = 0;
-              nvsWriteAPortLed(aPortLed);
-              break;
-          }
-          break;*/
-          case 4:
+          break;
+        case 3:
           EXIT_MENU_SET
           break;
         }
@@ -1138,7 +1103,7 @@ static void oledSettingSurface(void)
     case 2:
       for (;;)
       {
-        current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "无线配置", 1, "Wifi状态\n配网\n远程控制\n<-返回");
+        current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "无线配置", 1, "Wifi状态\n配网\n<-返回");
         switch (current_selection)
         {
         case 1:
@@ -1148,9 +1113,6 @@ static void oledSettingSurface(void)
           oledSmartConfigTask();
           break;
         case 3:
-          remoteControl();
-          break;
-        case 4:
           EXIT_MENU_SET
           break;
         }
