@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>充电桩控制台</title>
+<style>
+  :root{
+    --bg:#0b0f14; --card:#121a22; --line:#1f2c38; --txt:#e6edf3;
+    --sub:#8b98a5; --accent:#39d353; --accent2:#2f81f7; --warn:#f85149;
+    --c1:#39d353; --c2:#2f81f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--txt);padding:18px;max-width:980px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--sub);font-size:13px;margin-bottom:16px}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);
+       border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:16px}
+  input[type=text]{background:#0d141b;border:1px solid var(--line);color:var(--txt);
+       border-radius:8px;padding:8px 10px;font-size:13px;outline:none}
+  input.ip{flex:1;min-width:160px}
+  button{background:var(--accent);color:#04130a;border:none;border-radius:8px;
+       padding:8px 14px;font-weight:600;cursor:pointer;font-size:13px}
+  button.alt{background:#22303c;color:var(--txt)}
+  button:active{transform:translateY(1px)}
+  .dot{width:10px;height:10px;border-radius:50%;background:#444;display:inline-block}
+  .dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .dot.off{background:var(--warn)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card h2{font-size:14px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
+  .tag{font-size:11px;color:var(--sub);font-weight:400}
+  .row{display:flex;justify-content:space-between;align-items:baseline;
+       padding:5px 0;border-bottom:1px dashed #1a242e;font-size:13px}
+  .row:last-child{border-bottom:none}
+  .row .k{color:var(--sub)}
+  .row .v{font-variant-numeric:tabular-nums;font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;background:#22303c;color:var(--txt)}
+  .pill.warn{background:#3a1d1d;color:var(--warn)}
+  .pill.ok{background:#14331f;color:var(--accent)}
+  .ctrl{margin-top:16px}
+  .ctrl .card h2{margin-bottom:14px}
+  label{font-size:12px;color:var(--sub);display:block;margin:10px 0 4px}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .rgbval{font-family:ui-monospace,monospace;font-size:12px;color:var(--sub)}
+  .preview{height:34px;border-radius:8px;border:1px solid var(--line);margin-top:8px}
+  .log{margin-top:16px;background:#0d141b;border:1px solid var(--line);border-radius:10px;
+       padding:10px;height:160px;overflow:auto;font-family:ui-monospace,monospace;
+       font-size:11px;color:#9fb3c8;white-space:pre-wrap;line-height:1.5}
+  .hint{color:var(--sub);font-size:12px;margin-top:6px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:520px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <h1>⚡ 充电桩控制台</h1>
+  <div class="sub">通过 WebSocket (端口 81) 直连 ESP32 充电桩，实时显示状态</div>
+
+  <div class="bar">
+    <span class="dot off" id="dot"></span>
+    <input type="text" class="ip" id="ip" placeholder="充电桩IP (WebSocket 端口 81)">
+    <button id="conn">连接</button>
+    <span class="sub" id="status">未连接</span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2><span style="color:var(--c1)">C1 口</span><span class="tag" id="c1alarm"></span></h2>
+      <div class="row"><span class="k">功率</span><span class="v mono" id="c1p">— W</span></div>
+      <div class="row"><span class="k">电压</span><span class="v mono" id="c1v">— V</span></div>
+      <div class="row"><span class="k">电流</span><span class="v mono" id="c1a">— A</span></div>
+      <div class="row"><span class="k">协议</span><span class="v" id="c1proto">—</span></div>
+      <div class="row"><span class="k">PD 版本</span><span class="v" id="c1pd">—</span></div>
+      <div class="row"><span class="k">温度报警</span><span class="v" id="c1t">—</span></div>
+    </div>
+    <div class="card">
+      <h2><span style="color:var(--c2)">C2 口</span><span class="tag" id="c2alarm"></span></h2>
+      <div class="row"><span class="k">功率</span><span class="v mono" id="c2p">— W</span></div>
+      <div class="row"><span class="k">电压</span><span class="v mono" id="c2v">— V</span></div>
+      <div class="row"><span class="k">电流</span><span class="v mono" id="c2a">— A</span></div>
+      <div class="row"><span class="k">协议</span><span class="v" id="c2proto">—</span></div>
+      <div class="row"><span class="k">PD 版本</span><span class="v" id="c2pd">—</span></div>
+      <div class="row"><span class="k">温度报警</span><span class="v" id="c2t">—</span></div>
+    </div>
+    <div class="card">
+      <h2>A 口 / 输入</h2>
+      <div class="row"><span class="k">A1 电压</span><span class="v mono" id="a1">— V</span></div>
+      <div class="row"><span class="k">A2 电压</span><span class="v mono" id="a2">— V</span></div>
+      <div class="row"><span class="k">输入电压 VIN</span><span class="v mono" id="vin">— V</span></div>
+    </div>
+  </div>
+
+  <div class="ctrl">
+    <div class="card">
+      <h2>亮度</h2>
+      <div class="dev">设备当前亮度 <span class="rgbval" id="devLight">--</span> <span class="hint">(设备实时推送，只读)</span></div>
+      <label>设定亮度 <span class="rgbval" id="lv">100</span> <span class="hint">(0–100)</span></label>
+      <input type="range" id="light" min="0" max="100" value="100">
+      <button id="applyLight" style="margin-top:12px">应用亮度</button>
+    </div>
+  </div>
+
+  <div class="log" id="log"></div>
+
+<script>
+const PROTO = {0:"无",1:"QC2.0",2:"QC3.0",3:"FCP",4:"SCP",5:"PD FIX",6:"PD PPS",7:"PE1.1",8:"PE2.0",9:"VOOC",10:"SFCP",11:"AFC"};
+const PDVER = {0:"无",1:"PD2.0",2:"PD3.0"};
+
+const $ = id => document.getElementById(id);
+const logEl = $("log");
+function log(t){ logEl.textContent += t + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+
+function setDot(state){ // on | off
+  const d=$("dot"); d.className = "dot " + (state==="on"?"on":"off");
+  $("status").textContent = state==="on" ? "已连接 · 接收中" : "未连接";
+}
+
+function sendCmd(cmd){
+  const ws = window._ws;
+  if(ws && ws.readyState === WebSocket.OPEN){
+    ws.send(cmd);
+  } else {
+    log("未连接设备，无法发送: "+cmd);
+  }
+}
+
+// ---- light command (value 0-100, padded to 3 digits for device parsing) ----
+function lightCmd(){
+  const p = n => String(n).padStart(3,"0");
+  return `light="${p($("light").value)}"`;
+}
+function updatePreview(){
+  $("lv").textContent=$("light").value;
+}
+// reflect device's current brightness from push (read-only, do NOT touch the slider)
+function setDevLight(v){
+  $("devLight").textContent = v;
+}
+$("light").addEventListener("input",updatePreview);
+updatePreview();
+$("applyLight").onclick = ()=> sendCmd(lightCmd());
+
+// ---- parse charger packets ----
+function num(s){ const v=parseFloat(s); return isNaN(v)?null:v; }
+
+function parseRaw(raw){
+  // periodic packet: "v1#v2#v3#v4#v5#v6"  (C1V,C1A,C2V,C2A,A1,A2)
+  if(raw.includes("#")){
+    const p = raw.trim().split("#");
+    if(p.length>=6){
+      setText("c1v", num(p[0]), "V");
+      setText("c1a", num(p[1]), "A");
+      setText("c2v", num(p[2]), "V");
+      setText("c2a", num(p[3]), "A");
+      setText("a1", num(p[4]), "V");
+      setText("a2", num(p[5]), "V");
+    }
+    return;
+  }
+  // full status packet (multi-line)
+  const c1 = raw.match(/C1\s+([\d.]+)W\s+([\d.]+)V\s+([\d.]+)A/);
+  if(c1){ setText("c1p",num(c1[1]),"W"); setText("c1v",num(c1[2]),"V"); setText("c1a",num(c1[3]),"A"); }
+  const c2 = raw.match(/C2\s+([\d.]+)W\s+([\d.]+)V\s+([\d.]+)A/);
+  if(c2){ setText("c2p",num(c2[1]),"W"); setText("c2v",num(c2[2]),"V"); setText("c2a",num(c2[3]),"A"); }
+  const a = raw.match(/A1\s+([\d.]+)V\s+A2\s+([\d.]+)V/);
+  if(a){ setText("a1",num(a[1]),"V"); setText("a2",num(a[2]),"V"); }
+  const vin = raw.match(/VIN\s+([\d.]+)V/);
+  if(vin) setText("vin",num(vin[1]),"V");
+
+  // last line: light rgb0 rgb1 rgb2 c1p c1pd c2p c2pd c1t c2t humi temp
+  const lines = raw.split("\n");
+  const last = lines[lines.length-1].trim();
+  const nums = last.split(/\s+/).map(Number);
+  if(nums.length>=10){
+    const [light,r0,r1,r2,c1p,c1pd,c2p,c2pd,c1t,c2t] = nums;
+    setText("c1proto", PROTO[c1p] ?? c1p);
+    setText("c1pd", PDVER[c1pd] ?? c1pd);
+    setText("c2proto", PROTO[c2p] ?? c2p);
+    setText("c2pd", PDVER[c2pd] ?? c2pd);
+    setAlarm("c1t", c1t); setAlarm("c1alarm", c1t);
+    setAlarm("c2t", c2t); setAlarm("c2alarm", c2t);
+    // reflect device's current brightness (0-100) read-only display
+    setDevLight(Math.max(0,Math.min(100,light||0)));
+  }
+}
+function setText(id,v,unit){ if(v!==null) $(id).textContent = v + (unit||""); }
+function setAlarm(id,v){
+  if(v===null) return;
+  if(id.endsWith("alarm")){
+    $(id).innerHTML = v ? '<span class="pill warn">报警</span>' : '<span class="pill ok">正常</span>';
+  } else {
+    $(id).innerHTML = v ? '<span class="pill warn">异常</span>' : '<span class="pill ok">正常</span>';
+  }
+}
+
+// ---- connection (with auto-reconnect) ----
+let _manualClose = false;
+// prefill last used IP from cache
+(()=>{ const saved = localStorage.getItem("charger_ip"); if(saved) $("ip").value = saved; })();
+function connect(){
+  const ip = $("ip").value.trim();
+  if(!ip){ alert("请输入设备 IP"); return; }
+  const url = `ws://${ip}:81/ws`;
+  const ws = new WebSocket(url);
+  window._ws = ws;
+  ws.onopen = ()=>{ setDot("on"); log("已连接 "+url); localStorage.setItem("charger_ip", ip); };
+  ws.onmessage = e=>{ parseRaw(e.data); };
+  ws.onclose = ()=>{
+    setDot("off");
+    if(_manualClose){ log("连接关闭"); return; }
+    log("连接断开，2 秒后自动重连…");
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = ()=>{ setDot("off"); log("连接错误 (请确认设备已上电、IP 正确且端口 81 可达)"); };
+}
+$("conn").onclick = ()=>{
+  _manualClose = true;
+  if(window._ws){ try{ window._ws.close(); }catch(_){} }
+  _manualClose = false;
+  connect();
+};
+</script>
+</body>
+</html>

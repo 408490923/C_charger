@@ -1,0 +1,2 @@
+# WebSocket server support (used by ws_server.c for the web client)
+CONFIG_HTTPD_WS_SUPPORT=y

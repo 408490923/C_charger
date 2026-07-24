@@ -110,6 +110,15 @@ void udp_txvi(void *pvParameters)
     }
 }
 
+int charger_build_status(char *buf, int len)
+{
+    int n = snprintf(buf, len, "\nC1 %6.3fW %6.3fV %.3fA \nC2 %6.3fW %6.3fV %.3fA\nA1 %6.3fV  A2 %6.3fV\nVIN %6.3fV\n%3d %3d %3d %3d %2d %2d %2d %2d %d %d %d %4.1f", ((double)sw35xx_c1.OutVol * 6) / 1000 * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000,((double)sw35xx_c1.OutVol * 6) / 1000, ((double)sw35xx_c1.OutCur * 25 / 10) / 1000, \
+                                                        ((double)sw35xx_c2.OutVol * 6) / 1000 * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000, ((double)sw35xx_c2.OutVol * 6) / 1000, ((double)sw35xx_c2.OutCur * 25 / 10) / 1000, \
+                                                        ((double)ADC[0]) / 1000, ((double)ADC[1]) / 1000, ((double)sw35xx_c1.InVol) / 100, light, rgbProportion[0], rgbProportion[1], rgbProportion[2], sw35xx_c1.protocol, sw35xx_c1.pdversion, sw35xx_c2.protocol, sw35xx_c2.pdversion, sw35xx_c1.state.tem_alarm_upmax, sw35xx_c2.state.tem_alarm_upmax, \
+                                                        Humi,Temp + 0.1 * Temp_small);
+    return n;
+}
+
 void udp_server_task(void *pvParameters)
 {
     char rx_buffer[128];
@@ -222,14 +231,10 @@ void udp_server_task(void *pvParameters)
                 }
                 nvsWrite();
 
-                char tx_buffer[40];
-                sprintf(tx_buffer, "\nC1 %6.3fW %6.3fV %.3fA \nC2 %6.3fW %6.3fV %.3fA\nA1 %6.3fV  A2 %6.3fV\nVIN %6.3fV\n%3d %3d %3d %3d %2d %2d %2d %2d %d %d %d %4.1f", ((double)sw35xx_c1.OutVol * 6) / 1000 * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000,((double)sw35xx_c1.OutVol * 6) / 1000, ((double)sw35xx_c1.OutCur * 25 / 10) / 1000, \
-                                                            ((double)sw35xx_c2.OutVol * 6) / 1000 * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000, ((double)sw35xx_c2.OutVol * 6) / 1000, ((double)sw35xx_c2.OutCur * 25 / 10) / 1000, \
-                                                            ((double)ADC[0]) / 1000, ((double)ADC[1]) / 1000, ((double)sw35xx_c1.InVol) / 100, light, rgbProportion[0], rgbProportion[1], rgbProportion[2], sw35xx_c1.protocol, sw35xx_c1.pdversion, sw35xx_c2.protocol, sw35xx_c2.pdversion, sw35xx_c1.state.tem_alarm_upmax, sw35xx_c2.state.tem_alarm_upmax, \
-                                                            Humi,Temp + 0.1 * Temp_small);
+                char tx_buffer[256];
+                int txLen = charger_build_status(tx_buffer, (int)sizeof(tx_buffer));
                 printf("c1 tem: %6f\n", sw35xx_c1.tem);
                  printf("c2 tem: %6f\n", sw35xx_c2.tem);
-                int txLen = strlen(tx_buffer);
                 int err = sendto(sock, tx_buffer, txLen, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
 
                 //sendto(sock, tiaoshi, strlen(sendudp), 0, (struct sockaddr *)&source_addr, sizeof(source_addr));

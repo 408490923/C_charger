@@ -33,6 +33,7 @@
 #include "ota.h"
 #include "sntptime.h"
 #include "udp_server.h"
+#include "ws_server.h"
 
 
 #include "task.h"
@@ -315,6 +316,7 @@ void ALL_Init(void){
       
       xTaskCreate(sntpTask, "sntpTask", 4096, NULL, 1, NULL);
       xTaskCreate(udp_server_task, "udp_server", 4096, (void*)AF_INET, 4, NULL);
+      ws_server_start();
       // Wi-Fi 连接成功后，延时 5 秒触发首次天气刷新
       xTaskCreate(&http_test_task, "http_test_task", 8192, (void *)WEATHER_INIT_DELAY_MS, 1, NULL);
       // 每日 0 点定时刷新任务
