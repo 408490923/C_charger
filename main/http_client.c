@@ -10,6 +10,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <stdbool.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -23,6 +25,7 @@
 #include "menu.h"
 
 #include "esp_http_client.h"
+#include "http_client.h"
 extern char city[20];
 
 #define MAX_HTTP_RECV_BUFFER 512
@@ -187,9 +190,8 @@ int cutNum(const char * menu, char *buffer)
     return target;
 }
 
-static void http_rest_with_url(void)
+static bool http_rest_with_url(void)
 {
-    
     /**
      * NOTE: All the configuration parameters for http_client must be spefied either in URL or as host and path parameters.
      * If host and path parameters are not set, query parameter will be ignored. In such cases,
@@ -200,6 +202,7 @@ static void http_rest_with_url(void)
         char output_buffer[MAX_HTTP_OUTPUT_BUFFER] = {0};   // Buffer to store response of http request
     int content_length = 0;
     char URL[256];
+    bool success = false;
     if (city[0] == '\0')
     {
         // 未指定城市，wttr.in 自动按 IP 定位
@@ -260,7 +263,11 @@ static void http_rest_with_url(void)
                 {
                     strncpy(mWeather.city, city, sizeof(mWeather.city) - 1);
                 }
-                   
+
+                // 判定是否拿到有效结果：温度字段非空即视为成功
+                if (mWeather.tem[0] != '\0') {
+                    success = true;
+                }
 	//			cJSON_parse_task(output_buffer);
             } else {
                 ESP_LOGE(TAG, "Failed to read response");
@@ -270,6 +277,8 @@ static void http_rest_with_url(void)
     
 
     esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    return success;
 }
 //WSD
 static void http_rest_with_hostname_path(void)
@@ -748,10 +757,53 @@ static void http_partial_download(void)
 
 void http_test_task(void *pvParameters)
 {
-    http_rest_with_url();
-    
+    int init_delay_ms = (int)(intptr_t)pvParameters;
+    if (init_delay_ms > 0) {
+        ESP_LOGI(TAG, "Weather refresh delayed %d ms", init_delay_ms);
+        vTaskDelay(pdMS_TO_TICKS(init_delay_ms));
+    }
+
+    // 重试机制：最多 WEATHER_RETRY_COUNT 次，每次间隔 WEATHER_RETRY_DELAY_MS
+    for (int i = 0; i < WEATHER_RETRY_COUNT; i++) {
+        if (http_rest_with_url()) {
+            ESP_LOGI(TAG, "Weather refresh success");
+            break;
+        }
+        ESP_LOGW(TAG, "Weather refresh failed, retry %d/%d in %d s",
+                 i + 1, WEATHER_RETRY_COUNT, WEATHER_RETRY_DELAY_MS / 1000);
+        vTaskDelay(pdMS_TO_TICKS(WEATHER_RETRY_DELAY_MS));
+    }
 
     ESP_LOGI(TAG, "Finish http example");
     vTaskDelete(NULL);
+}
+
+/* 每日 0 点定时刷新任务 */
+void weather_daily_task(void *pvParameters)
+{
+    for (;;) {
+        time_t now;
+        struct tm timeinfo;
+        int secs_to_midnight;
+
+        time(&now);
+        // 等待 SNTP 时间同步完成（1970 基准会导致延时计算异常）
+        while (now < 1600000000) {
+            vTaskDelay(pdMS_TO_TICKS(10000));
+            time(&now);
+        }
+
+        localtime_r(&now, &timeinfo);
+        secs_to_midnight = 24 * 3600 - (timeinfo.tm_hour * 3600 + timeinfo.tm_min * 60 + timeinfo.tm_sec);
+        if (secs_to_midnight <= 0) {
+            secs_to_midnight = 60;
+        }
+
+        ESP_LOGI(TAG, "Next daily weather refresh in %d s", secs_to_midnight);
+        vTaskDelay(pdMS_TO_TICKS(secs_to_midnight * 1000));
+
+        // 到达 0 点，触发一次刷新（无初始延时）
+        xTaskCreate(&http_test_task, "http_test_task_daily", 8192, (void *)0, 5, NULL);
+    }
 }
 

@@ -63,6 +63,7 @@ int OledProtectEnd = 0;
 time_t beginTime = 0;
 char  oldVersion[20] = {'\0'};
 #define TIME_TABLE "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23" 
+#define SCREENSAVER_TIMEOUT 10  /* 秒，无操作后进入屏保 */
 
 
 
@@ -871,16 +872,13 @@ static void oledWeatherSurface(void)
 
 void oledStopDisplay()
 {
-  u8g2_uint_t x[] = {0, 10, 20, 30, 40, 50, 60, 70};
-  u8g2_uint_t y[] = {10, 15, 21, 26, 32, 37, 43, 49};
-  static time_t nowTimef;
-  static time_t oldTimef = 0;
-  static uint32_t num = 0;
+  time_t nowTimef;
   struct tm timeinfo;
-  char buf[20];
+  char buf[128] = {0};
+  const char* weekDays[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
   char mmm = 0;
+
   time(&nowTimef);
-  
   localtime_r(&nowTimef, &timeinfo);
 
   if(oledOffTimeBegin > oledOffTimeEnd)
@@ -902,33 +900,57 @@ void oledStopDisplay()
 
   if(mmm == 0)
   {
-      sprintf(buf,"%02d:%02d:%02d",timeinfo.tm_hour,timeinfo.tm_min,timeinfo.tm_sec);
-      u8g2_ClearBuffer(&u8g2);
-      u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
-      
-      if(nowTimef - oldTimef > 5)
-      {
-        oldTimef = nowTimef;
-        num++;
-      }
-      if(num > 64)
-          num = 0;
-        
-        
-      u8g2_DrawUTF8(&u8g2, x[num / 8 - 1], y[ num % 8], buf);
-      if(boardMode == 1 && Humi > 0)
-      {
-        sprintf(buf,"%4.1f℃  %d%% ",Temp + 0.1 * Temp_small, Humi);
-        u8g2_DrawUTF8(&u8g2, x[num / 8 - 1], y[ num % 8] + 15, buf);
-      }
-      else if(displayInput == 1)
-      {
-        sprintf(buf,"VIN:%.3fV",((double)sw35xx_c1.InVol) / 100);
-        u8g2_DrawUTF8(&u8g2, x[num / 8 - 1], y[ num % 8] + 15, buf);
-      }
-  }
-      u8g2_SendBuffer(&u8g2);
+    u8g2_ClearBuffer(&u8g2);
 
+    // 日期 + 星期（居中）
+    u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
+    sprintf(buf, "%d/%02d/%02d %s",
+            timeinfo.tm_year + 1900,
+            timeinfo.tm_mon + 1,
+            timeinfo.tm_mday,
+            weekDays[timeinfo.tm_wday]);
+    u8g2_DrawUTF8(&u8g2, (128 - u8g2_GetUTF8Width(&u8g2, buf)) / 2, 14, buf);
+
+    // 时间：粗体大字，水平 + 垂直居中（位于日期行与底部天气行之间）
+    u8g2_SetFont(&u8g2, u8g2_font_helvB14_tr);
+    sprintf(buf, "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    int time_w = u8g2_GetStrWidth(&u8g2, buf);
+    u8g2_DrawStr(&u8g2, (128 - time_w) / 2, 40, buf);
+
+    // 最后一行：左侧气温/湿度，右侧设备 IP 末段
+    u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
+
+    // 获取设备 IP 最后一节（如 10.0.0.134 -> 134）
+    char last_ip[8] = {0};
+    esp_netif_ip_info_t ipInfo;
+    if (esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &ipInfo) == ESP_OK)
+    {
+      char ip_Str[16] = {0};
+      esp_ip4addr_ntoa(&(ipInfo.ip), ip_Str, sizeof(ip_Str));
+      char *dot = strrchr(ip_Str, '.');
+      if (dot != NULL)
+      {
+        strncpy(last_ip, dot + 1, sizeof(last_ip) - 1);
+      }
+    }
+
+    // 左侧：气温（含湿度），左对齐，避免与右侧 IP 重叠
+    if (mWeather.tem[0] != '\0')
+    {
+      if (mWeather.humidity[0] != '\0')
+        sprintf(buf, "%s℃/%s%%", mWeather.tem, mWeather.humidity);
+      else
+        sprintf(buf, "%s℃", mWeather.tem);
+      u8g2_DrawUTF8(&u8g2, 0, 60, buf);
+    }
+    // 右侧：IP 末段，右对齐（x = 128 - 文本宽度），保证不越界
+    if (last_ip[0] != '\0')
+    {
+      u8g2_DrawUTF8(&u8g2, 128 - u8g2_GetUTF8Width(&u8g2, last_ip), 60, last_ip);
+    }
+  }
+
+  u8g2_SendBuffer(&u8g2);
 }
 
 static void oledClockSurface(void){
@@ -977,11 +999,11 @@ void displayRgbSet(char* header, int16_t* RGB)
     }
     else if (event == U8X8_MSG_GPIO_MENU_NEXT || event == U8X8_MSG_GPIO_MENU_DOWN)
     {
-      *RGB = *RGB >= 255 ? 255 : *RGB + 1;
+      *RGB = *RGB >= 245 ? 255 : *RGB + 10;
     }
     else if (event == U8X8_MSG_GPIO_MENU_PREV || event == U8X8_MSG_GPIO_MENU_UP)
     {
-      *RGB = *RGB <= 0 ? 0 : *RGB - 1;
+      *RGB = *RGB <= 10 ? 0 : *RGB - 10;
     }
 
     char buf[20];
@@ -1059,7 +1081,7 @@ static void oledSettingSurface(void)
     u8g2_ClearBuffer(&u8g2);
     u8g2_SetFont(&u8g2, u8g2_font_wqy13_t_gb2312);
     u8g2_SetFontRefHeightAll(&u8g2);
-    current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "设置", 1, "参数设置\n无线配置\n系统监控\n固件更新\nboardMode\n熄屏时间设置\n关于\n重启\n<-返回");
+    current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "设置", 1, "参数设置\n无线配置\n系统监控\n熄屏时间设置\n关于\n重启\n<-返回");
     ESP_LOGI(TAG, "oledtask!\n");
     switch (current_selection)
     {
@@ -1159,7 +1181,7 @@ static void oledSettingSurface(void)
         EXIT_MENU_CHECK
       }
       break;
-    case 4:
+/*    case 4:
       for (;;)
       {
         current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "固件更新", 1, "手动更新\n自动更新\n<-返回");
@@ -1205,8 +1227,8 @@ static void oledSettingSurface(void)
         }
         EXIT_MENU_CHECK
       }
-      break;
-      case 6:
+      break;*/
+      case 4:
       for (;;)
       {
         char buf[50];
@@ -1232,13 +1254,13 @@ static void oledSettingSurface(void)
         EXIT_MENU_CHECK
       }
       break;
-    case 7:
+    case 5:
       current_selection = u8g2_UserInterfaceSelectionList(&u8g2, "关于", 1, "Fix by XWW\n固件版本: V2.0.0\n<-返回"); // 使用 硬编码 显示固件版本，我确实想不起来还有什么办法可以显示版本
       break;
-    case 8:
+    case 6:
       esp_restart();
       break;
-    case 9:
+    case 7:
       EXIT_MENU_SET
       break;
     }
@@ -1272,7 +1294,6 @@ void oledViAllShow()
 void reSetOledProtect()
 {
     OledProtectBegin = 0;
-    xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
     time(&beginTime);
 }
 
@@ -1369,7 +1390,7 @@ void oledTask(void *pvParameters)
     {
     
       time(&nowTime);
-      if(nowTime - beginTime >= 45)
+      if(nowTime - beginTime >= SCREENSAVER_TIMEOUT)
       {
         OledProtectBegin = 1;
         
@@ -1381,10 +1402,6 @@ void oledTask(void *pvParameters)
         if(Mode == 0)
         {
           viShowState = (viShowState == 2) ? 0 : viShowState + 1;
-        }
-        if(Mode == 1)
-        {
-          xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
         }
         
       }
