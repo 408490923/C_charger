@@ -1,11 +1,14 @@
 #include <stdio.h>
+#include <stdbool.h>
 
-/* 天气刷新参数（供 main.c / http_client.c 共用） */
-#define WEATHER_INIT_DELAY_MS 5000   /* Wi-Fi 连接成功后首次刷新延时 */
-#define WEATHER_RETRY_COUNT   20     /* 失败时最大重试次数 */
-#define WEATHER_RETRY_DELAY_MS 5000  /* 每次重试间隔 */
+/* 天气获取配置 */
+#define WEATHER_FETCH_PERIOD_MS 60000   /* 获取/重试周期：每 1 分钟一次 */
 
-void http_test_task(void *pvParameters);
-void weather_daily_task(void *pvParameters);
+/* 天气获取公共接口 */
+void weather_start(void);   /* WiFi 连接成功后调用：启动天气获取（幂等，可重复调用） */
+void weather_stop(void);    /* WiFi 断开时调用：停止并清理天气任务（可选） */
+bool weather_is_ready(void);/* 当前是否已成功获取到天气数据 */
+
+/* 解析辅助（供其他模块复用，保持兼容） */
 int cutString(const char * menu, char *target, char *buffer);
 int cutNum(const char * menu, char *buffer);

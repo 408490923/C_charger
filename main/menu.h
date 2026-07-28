@@ -21,7 +21,7 @@ typedef struct
   char temNight[20];
   char humidity[20];
 }myWeather;
-myWeather mWeather;
+extern myWeather mWeather;   /* 全局天气数据：定义见 menu.c，OLED 与 http_client 共享 */
 void oledTask(void *pvParameters);
 void oledStopDisplay();
 void oledOtaDisplay();

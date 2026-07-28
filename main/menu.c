@@ -57,7 +57,7 @@ extern int16_t light;
 // HTTP配置参数
 
 #define MAX_HTTP_OUTPUT_BUFFER 2048
-extern myWeather mWeather;
+myWeather mWeather;   /* 全局天气数据定义（OLED 与 http_client 共享同一份） */
 extern char local_response_buffer[2048];
 
 int OledProtectEnd = 0;

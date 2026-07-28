@@ -14,6 +14,7 @@
 #include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
@@ -217,6 +218,8 @@ static bool http_rest_with_url(void)
     esp_http_client_config_t config = {
         .url = URL,
         .crt_bundle_attach = esp_crt_bundle_attach,
+        /* wttr.in 要求必须带 User-Agent，否则直接返回 429 限流 */
+        .user_agent = "C_charger/2.0.0",
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -755,55 +758,148 @@ static void http_partial_download(void)
     esp_http_client_cleanup(client);
 }
 
-void http_test_task(void *pvParameters)
+/* ================= 天气获取模块（统一重构） =================
+   设计要点：
+   - 单一任务 weather_task + 单一软件定时器（周期 1 分钟，自动重载）。
+   - WiFi 连接成功后调用 weather_start()：立即触发首次获取，并启动周期定时器。
+   - 获取失败/无数据时，下一个定时器节拍（1 分钟）自动重试，直到成功。
+   - 每日 00:00：任务在节拍中检测到跨日，重置状态并开启新一轮获取。
+   - 幂等与清理：weather_start() 重复调用不会创建重复任务/定时器；
+     weather_stop() 通过通知位安全退出任务并删除定时器，避免资源泄漏与冲突。
+   ============================================================ */
+
+static TaskHandle_t s_weather_task = NULL;
+static TimerHandle_t s_weather_timer = NULL;
+static bool s_weather_ready = false;
+static int s_weather_last_day = -1;
+
+/* 任务通知位 */
+#define WEATHER_EVT_FETCH  (1u << 0)   /* 触发一次获取 */
+#define WEATHER_EVT_STOP   (1u << 1)   /* 退出任务 */
+
+/* 软件定时器回调：周期到点，通知任务去获取 */
+static void weather_timer_callback(TimerHandle_t xTimer)
 {
-    int init_delay_ms = (int)(intptr_t)pvParameters;
-    if (init_delay_ms > 0) {
-        ESP_LOGI(TAG, "Weather refresh delayed %d ms", init_delay_ms);
-        vTaskDelay(pdMS_TO_TICKS(init_delay_ms));
+    if (s_weather_task != NULL) {
+        xTaskNotify(s_weather_task, WEATHER_EVT_FETCH, eSetBits);
+    }
+}
+
+/* 本地时间是否已跨到新的一天（用于 00:00 重置） */
+static bool weather_is_new_day(void)
+{
+    time_t now = time(NULL);
+    if (now < 1600000000) {
+        return false;   /* SNTP 尚未同步 */
+    }
+    struct tm t;
+    localtime_r(&now, &t);
+    if (s_weather_last_day < 0) {
+        s_weather_last_day = t.tm_mday;
+        return false;
+    }
+    if (t.tm_mday != s_weather_last_day) {
+        s_weather_last_day = t.tm_mday;
+        return true;
+    }
+    return false;
+}
+
+static void weather_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    /* 等待 SNTP 时间同步，避免跨日判断异常 */
+    while (time(NULL) < 1600000000) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
-    // 重试机制：最多 WEATHER_RETRY_COUNT 次，每次间隔 WEATHER_RETRY_DELAY_MS
-    for (int i = 0; i < WEATHER_RETRY_COUNT; i++) {
-        if (http_rest_with_url()) {
-            ESP_LOGI(TAG, "Weather refresh success");
+    /* 连接成功后立即触发首次获取 */
+    xTaskNotify(s_weather_task, WEATHER_EVT_FETCH, eSetBits);
+
+    for (;;) {
+        uint32_t bits = 0;
+        xTaskNotifyWait(0, 0xFFFFFFFF, &bits, portMAX_DELAY);
+
+        if (bits & WEATHER_EVT_STOP) {
             break;
         }
-        ESP_LOGW(TAG, "Weather refresh failed, retry %d/%d in %d s",
-                 i + 1, WEATHER_RETRY_COUNT, WEATHER_RETRY_DELAY_MS / 1000);
-        vTaskDelay(pdMS_TO_TICKS(WEATHER_RETRY_DELAY_MS));
+        if (!(bits & WEATHER_EVT_FETCH)) {
+            continue;
+        }
+
+        /* 每日 00:00：重置状态，开启新一轮获取 */
+        if (weather_is_new_day()) {
+            s_weather_ready = false;
+            ESP_LOGI(TAG, "Daily reset: start a new weather fetch round");
+        }
+
+        bool ok = http_rest_with_url();
+        if (ok) {
+            s_weather_ready = true;
+            ESP_LOGI(TAG, "Weather fetched OK");
+        } else {
+            s_weather_ready = false;
+            ESP_LOGW(TAG, "Weather fetch failed, will retry in 1 min");
+        }
     }
 
-    ESP_LOGI(TAG, "Finish http example");
+    /* 清理：删除定时器并置空句柄，避免重复创建与资源泄漏 */
+    if (s_weather_timer != NULL) {
+        xTimerStop(s_weather_timer, portMAX_DELAY);
+        xTimerDelete(s_weather_timer, portMAX_DELAY);
+        s_weather_timer = NULL;
+    }
+    s_weather_task = NULL;
     vTaskDelete(NULL);
 }
 
-/* 每日 0 点定时刷新任务 */
-void weather_daily_task(void *pvParameters)
+void weather_start(void)
 {
-    for (;;) {
-        time_t now;
-        struct tm timeinfo;
-        int secs_to_midnight;
-
-        time(&now);
-        // 等待 SNTP 时间同步完成（1970 基准会导致延时计算异常）
-        while (now < 1600000000) {
-            vTaskDelay(pdMS_TO_TICKS(10000));
-            time(&now);
-        }
-
-        localtime_r(&now, &timeinfo);
-        secs_to_midnight = 24 * 3600 - (timeinfo.tm_hour * 3600 + timeinfo.tm_min * 60 + timeinfo.tm_sec);
-        if (secs_to_midnight <= 0) {
-            secs_to_midnight = 60;
-        }
-
-        ESP_LOGI(TAG, "Next daily weather refresh in %d s", secs_to_midnight);
-        vTaskDelay(pdMS_TO_TICKS(secs_to_midnight * 1000));
-
-        // 到达 0 点，触发一次刷新（无初始延时）
-        xTaskCreate(&http_test_task, "http_test_task_daily", 8192, (void *)0, 5, NULL);
+    if (s_weather_task != NULL) {
+        /* 已启动（如 WiFi 重连）：仅触发一次立即获取，避免重复创建任务/定时器 */
+        xTaskNotify(s_weather_task, WEATHER_EVT_FETCH, eSetBits);
+        return;
     }
+
+    /* 创建周期定时器：每 1 分钟触发一次获取；失败重试也复用该节拍 */
+    s_weather_timer = xTimerCreate("weather_timer",
+                                   pdMS_TO_TICKS(WEATHER_FETCH_PERIOD_MS),
+                                   pdTRUE,     /* 自动重载 */
+                                   (void *)0,
+                                   weather_timer_callback);
+    if (s_weather_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create weather timer");
+        return;
+    }
+    if (xTimerStart(s_weather_timer, portMAX_DELAY) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start weather timer");
+        xTimerDelete(s_weather_timer, portMAX_DELAY);
+        s_weather_timer = NULL;
+        return;
+    }
+
+    /* 创建天气任务 */
+    BaseType_t rc = xTaskCreate(&weather_task, "weather_task", 8192, NULL, 1, &s_weather_task);
+    if (rc != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create weather task");
+        xTimerStop(s_weather_timer, portMAX_DELAY);
+        xTimerDelete(s_weather_timer, portMAX_DELAY);
+        s_weather_timer = NULL;
+        s_weather_task = NULL;
+    }
+}
+
+void weather_stop(void)
+{
+    if (s_weather_task != NULL) {
+        xTaskNotify(s_weather_task, WEATHER_EVT_STOP, eSetBits);
+    }
+    /* 定时器与任务资源在 weather_task 退出时统一清理 */
+}
+
+bool weather_is_ready(void)
+{
+    return s_weather_ready;
 }
 
