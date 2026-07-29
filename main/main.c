@@ -101,6 +101,19 @@ void nvsRead(void)
                 ESP_LOGI(TAG, "ERROR light = %s", esp_err_to_name(err));
         }
 
+        err = nvs_get_u8(my_handle, "oledBright", &oledBrightness);
+        switch (err)
+        {
+            case ESP_OK:
+                ESP_LOGI(TAG, "oledBrightness = %d", oledBrightness);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                oledBrightness = 200;
+                break;
+            default:
+                ESP_LOGI(TAG, "ERROR oledBrightness = %s", esp_err_to_name(err));
+        }
+
          err = nvs_get_i16(my_handle, "boardMode", &boardMode);
         switch (err) 
         {
@@ -267,6 +280,7 @@ void ALL_Init(void){
   uint8_t s_WifiConfigVal;
   nvsRead();
   u8g2_Init();// Init I2C
+  oledSetBrightness(oledBrightness);
   oledInitMessageTask(1,"");
   NVS_Init();
   ADC_Init();

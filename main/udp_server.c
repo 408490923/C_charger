@@ -112,10 +112,10 @@ void udp_txvi(void *pvParameters)
 
 int charger_build_status(char *buf, int len)
 {
-    int n = snprintf(buf, len, "\nC1 %6.3fW %6.3fV %.3fA \nC2 %6.3fW %6.3fV %.3fA\nA1 %6.3fV  A2 %6.3fV\nVIN %6.3fV\n%3d %3d %3d %3d %2d %2d %2d %2d %d %d %d %4.1f", ((double)sw35xx_c1.OutVol * 6) / 1000 * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000,((double)sw35xx_c1.OutVol * 6) / 1000, ((double)sw35xx_c1.OutCur * 25 / 10) / 1000, \
+    int n = snprintf(buf, len, "\nC1 %6.3fW %6.3fV %.3fA \nC2 %6.3fW %6.3fV %.3fA\nA1 %6.3fV  A2 %6.3fV\nVIN %6.3fV\n%3d %3d %3d %3d %2d %2d %2d %2d %d %d %d %4.1f %d", ((double)sw35xx_c1.OutVol * 6) / 1000 * ((double)sw35xx_c1.OutCur * 25 / 10) / 1000,((double)sw35xx_c1.OutVol * 6) / 1000, ((double)sw35xx_c1.OutCur * 25 / 10) / 1000, \
                                                         ((double)sw35xx_c2.OutVol * 6) / 1000 * ((double)sw35xx_c2.OutCur * 25 / 10) / 1000, ((double)sw35xx_c2.OutVol * 6) / 1000, ((double)sw35xx_c2.OutCur * 25 / 10) / 1000, \
                                                         ((double)ADC[0]) / 1000, ((double)ADC[1]) / 1000, ((double)sw35xx_c1.InVol) / 100, light, rgbProportion[0], rgbProportion[1], rgbProportion[2], sw35xx_c1.protocol, sw35xx_c1.pdversion, sw35xx_c2.protocol, sw35xx_c2.pdversion, sw35xx_c1.state.tem_alarm_upmax, sw35xx_c2.state.tem_alarm_upmax, \
-                                                        Humi,Temp + 0.1 * Temp_small);
+                                                        Humi,Temp + 0.1 * Temp_small, oledBrightness);
     return n;
 }
 
@@ -227,7 +227,15 @@ void udp_server_task(void *pvParameters)
                 if(cutString("light", rgb, rx_buffer) == 0)
                 {
                     light = (rgb[0] - '0') * 100 +  (rgb[1] - '0') * 10 + rgb[2] - '0';
-                    
+
+                }
+                char ob[5] = {0};
+                if(cutString("oledbright", ob, rx_buffer) == 0)
+                {
+                    int b = 0;
+                    for(int k = 0; ob[k] >= '0' && ob[k] <= '9'; k++) b = b * 10 + (ob[k] - '0');
+                    if(b > 255) b = 255;
+                    oledSetBrightness((uint8_t)b);
                 }
                 nvsWrite();
 

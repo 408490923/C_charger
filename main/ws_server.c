@@ -70,6 +70,12 @@ static void ws_apply_cmd(const char *txt)
     if (cutString("light", tmp, (char *)txt) == 0) {
         light = (tmp[0] - '0') * 100 + (tmp[1] - '0') * 10 + (tmp[2] - '0');
     }
+    if (cutString("oledbright", tmp, (char *)txt) == 0) {
+        int b = atoi(tmp);
+        if (b < 0) b = 0;
+        if (b > 255) b = 255;
+        oledSetBrightness((uint8_t)b);
+    }
     nvsWrite();
 }
 

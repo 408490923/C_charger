@@ -109,6 +109,31 @@ void nvsWriteCity(char * city)
     nvs_close(my_handle);
 }
 
+/* OLED 屏幕亮度：SSD1306 对比度寄存器，范围 0-255，默认 200 */
+uint8_t oledBrightness = 200;
+
+/*
+ * u8g2/I2C 不是线程安全的：oledTask 持续通过 I2C 刷新屏幕，
+ * 而 WebSocket/UDP 任务也会调用本函数。若直接在这里发起 I2C 传输，
+ * 两个任务会并发访问同一 I2C 外设，导致传输错乱、ESP_ERROR_CHECK abort -> 设备重启。
+ * 因此这里只更新变量与 NVS，真正的 u8g2_SetContrast 延迟到 oledTask 里执行
+ * （oledTask 是唯一允许触碰 u8g2 的任务）。
+ */
+static bool oledBrightDirty = true;   /* 启动后由 oledTask 应用一次 */
+
+void oledSetBrightness(uint8_t level)
+{
+    if (level > 255) level = 255;
+    oledBrightness = level;
+    oledBrightDirty = true;
+    nvs_handle_t my_handle;
+    if (nvs_open("storage", NVS_READWRITE, &my_handle) == ESP_OK) {
+        nvs_set_u8(my_handle, "oledBright", oledBrightness);
+        nvs_commit(my_handle);
+        nvs_close(my_handle);
+    }
+}
+
 void nvsWrite()
 {
     esp_err_t err = nvs_flash_init();
@@ -1400,6 +1425,12 @@ void oledTask(void *pvParameters)
   int viShowState = 0;
   for (;;)
   {
+    /* 应用 OLED 亮度变更（延迟自 oledSetBrightness，避免跨任务并发访问 I2C） */
+    if (oledBrightDirty) {
+        u8g2_SetContrast(&u8g2, oledBrightness);
+        oledBrightDirty = false;
+    }
+
     uint8_t event = u8x8_GetMenuEvent(u8g2_GetU8x8(&u8g2));
 
     /* OTA 升级专属界面：最高优先级，升级过程中屏蔽其他所有界面与操作 */

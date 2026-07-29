@@ -39,4 +39,6 @@ uint32_t timeTest;
 int OledProtectBegin;
 int8_t aPortLed;
 int8_t aggreLimit;
+extern uint8_t oledBrightness;        /* OLED 屏幕对比度(亮度) 0-255，定义见 menu.c */
+void oledSetBrightness(uint8_t level);/* 设置并持久化 OLED 亮度 */
 #endif

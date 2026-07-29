@@ -100,6 +100,14 @@
       <input type="range" id="light" min="0" max="100" value="100">
       <button id="applyLight" style="margin-top:12px">应用亮度</button>
     </div>
+
+    <div class="card">
+      <h2>OLED 屏幕亮度</h2>
+      <div class="dev">设备当前 OLED 亮度 <span class="rgbval" id="devOled">--</span> <span class="hint">(0–255, 实时推送)</span></div>
+      <label>设定 OLED 亮度 <span class="rgbval" id="ov">200</span> <span class="hint">(0–255)</span></label>
+      <input type="range" id="oledBright" min="0" max="255" step="5" value="200">
+      <button id="applyOled" style="margin-top:12px">应用 OLED 亮度</button>
+    </div>
   </div>
 
   <div class="log" id="log"></div>
@@ -142,6 +150,15 @@ $("light").addEventListener("input",updatePreview);
 updatePreview();
 $("applyLight").onclick = ()=> sendCmd(lightCmd());
 
+// ---- OLED brightness command (value 0-255, device parses via atoi) ----
+function oledCmd(){
+  return `oledbright="${$("oledBright").value}"`;
+}
+function updateOledPreview(){ $("ov").textContent = $("oledBright").value; }
+$("oledBright").addEventListener("input", updateOledPreview);
+updateOledPreview();
+$("applyOled").onclick = ()=> sendCmd(oledCmd());
+
 // ---- parse charger packets ----
 function num(s){ const v=parseFloat(s); return isNaN(v)?null:v; }
 
@@ -183,6 +200,12 @@ function parseRaw(raw){
     setAlarm("c2t", c2t); setAlarm("c2alarm", c2t);
     // reflect device's current brightness (0-100) read-only display
     setDevLight(Math.max(0,Math.min(100,light||0)));
+  }
+  // last line now ends with oledBrightness (index 12)
+  // 仅更新只读显示，不改写滑块，避免拖动时被推送值推回（与 LED 亮度处理方式一致）
+  if(nums.length>=13){
+    const ob = nums[12];
+    $("devOled").textContent = ob;
   }
 }
 function setText(id,v,unit){ if(v!==null) $(id).textContent = v + (unit||""); }
